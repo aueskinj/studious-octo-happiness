@@ -16,7 +16,7 @@
 </head>
 <body>
   <div id="chatbox">
-    <h2>🧠 Chat with Phi-3</h2>
+    <h2>🧠 Chat with TINYLLAMA</h2>
     <div id="messages"></div>
     <input id="user-input" type="text" placeholder="Type a message...">
     <button onclick="sendMessage()">Send</button>
@@ -28,20 +28,26 @@
       const message = userInput.value;
       if (!message.trim()) return;
       userInput.value = '';
-
+  
       const messagesDiv = document.getElementById('messages');
       messagesDiv.innerHTML += `<div class="message user"><b>You:</b> ${message}</div>`;
-
-      const response = await fetch'/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      });
-
-      const data = await response.json();
-      messagesDiv.innerHTML += `<div class="message bot"><b>Phi-3:</b> ${data.response}</div>`;
+  
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+  
+        const data = await response.json();
+        console.log("Response data:", data); // Add this line for debugging
+        messagesDiv.innerHTML += `<div class="message bot"><b>TINYLLAMA:</b> ${data.response}</div>`;
+      } catch (err) {
+        messagesDiv.innerHTML += `<div class="message bot"><b>TINYLLAMA:</b> Error: ${err.message}</div>`;
+      }
+  
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
-  </script>
+  </script>  
 </body>
 </html>
