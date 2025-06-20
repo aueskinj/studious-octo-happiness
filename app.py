@@ -1,10 +1,3 @@
-### Folder structure:
-# chatbot_webapp/
-# ├── app.py
-# ├── templates/
-# │   └── index.html
-
-# ---------- app.py ----------
 from flask import Flask, request, jsonify, render_template
 from langchain_core.messages import HumanMessage
 from langchain_community.chat_models import ChatOllama
@@ -16,7 +9,7 @@ chat = ChatOllama(model="phi3")
 def index():
     return render_template('index.html')
 
-@app.route('/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST'])
 def chat_route():
     user_message = request.json['message']
     response = chat.invoke([HumanMessage(content=user_message)])
