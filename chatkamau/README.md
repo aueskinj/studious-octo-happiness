@@ -24,3 +24,5 @@ A comprehensive AI-powered automation and RAG system with FastAPI backend and Re
 - Automation workflows and integrations
 - User authentication and management
 - Real-time chat interface
+
+
