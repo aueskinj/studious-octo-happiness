@@ -1,0 +1,11 @@
+# OCR and Text Processing
+easyocr
+paddleocr
+paddlepaddle
+
+# Machine Learning and NLP
+transformers
+datasets
+
+# PDF Processing
+pdf2image
