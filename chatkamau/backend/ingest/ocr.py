@@ -211,5 +211,9 @@ def process_pdf(pdf_path, output_dir="output"):
 
     print(f"[DONE] Results saved to {output_dir}")
 
-# process_pdf('/content/Austin_Njuguna.pdf')
-# process_pdf('/content/Basics.pdf')
+
+if __name__=='__main__':
+    # Example usage
+    # process_pdf('/content/Austin_Njuguna.pdf', output_dir='/content/output')
+    # Uncomment the above line and provide a valid PDF path to run the function
+    pass
