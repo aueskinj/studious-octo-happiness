@@ -1,68 +1,69 @@
-from flask import Flask, request, jsonify, render_template
-from langchain_core.messages import HumanMessage
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage
 
-app = Flask(__name__)
+app = FastAPI()
 
-# Fix: Use localhost since Ollama is running locally
+# Allow CORS from all origins (adjust if needed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize the chat model
 chat = ChatOllama(
-    model="tinyllama", 
+    model="tinyllama",
     base_url="http://localhost:11434"
 )
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+@app.get("/")
+def health_check():
+    return {"status": "ok", "message": "LangChain Ollama API is running."}
 
-@app.route('/chat', methods=['POST'])
-def chat_route():
-    user_message = request.json.get('message', '')
-    if not user_message:
-        return jsonify({'error': 'Message is required'}), 400
-
+@app.post("/chat")
+async def chat_with_model(request: Request):
     try:
-        # Debug: Print the message being sent
-        print(f"Sending message: {user_message}")
-        
+        body = await request.json()
+        user_message = body.get("message", "").strip()
+
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Message field is required.")
+
+        print(f"[User]: {user_message}")
+
         result = chat.invoke([HumanMessage(content=user_message)])
-        
-        # Debug: Print the raw result
-        print(f"Raw result: {result}")
-        print(f"Result type: {type(result)}")
-        
-        # Extract content properly
-        if hasattr(result, 'content'):
-            reply = result.content
-        elif hasattr(result, 'text'):
-            reply = result.text
-        else:
-            reply = str(result)
-            
-        # Debug: Print the extracted reply
-        print(f"Extracted reply: {reply}")
-        
-        return jsonify({'response': reply})
-        
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return jsonify({'error': f'Chat error: {str(e)}'}), 500
 
-@app.route('/test', methods=['GET'])
+        # Extract and return the response
+        reply = getattr(result, 'content', str(result))
+        print(f"[TinyLLaMA]: {reply}")
+
+        return {"response": reply}
+
+    except Exception as e:
+        print(f"Error during chat: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+@app.get("/test")
 def test_connection():
-    """Test endpoint to check if Ollama connection works"""
+    """
+    Test endpoint to check if Ollama is working properly
+    """
     try:
-        result = chat.invoke([HumanMessage(content="Hello, can you hear me?")])
-        return jsonify({
-            'status': 'success',
-            'result_type': str(type(result)),
-            'has_content': hasattr(result, 'content'),
-            'content': getattr(result, 'content', str(result))
-        })
+        test_prompt = "Hello, can you hear me?"
+        result = chat.invoke([HumanMessage(content=test_prompt)])
+        return {
+            "status": "success",
+            "result_type": str(type(result)),
+            "has_content": hasattr(result, "content"),
+            "content": getattr(result, "content", str(result))
+        }
     except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
+        raise HTTPException(status_code=500, detail=f"Test connection failed: {str(e)}")
 
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
