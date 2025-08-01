@@ -1,12 +1,14 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
 app = FastAPI()
 
-# Allow CORS from all origins (adjust if needed)
+# Allow CORS from all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,15 +17,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize the chat model
+templates = Jinja2Templates(directory="templates")
+
 chat = ChatOllama(
     model="tinyllama",
     base_url="http://localhost:11434"
 )
 
-@app.get("/")
-def health_check():
-    return {"status": "ok", "message": "LangChain Ollama API is running."}
+@app.get("/", response_class=HTMLResponse)
+async def read_index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/chat")
 async def chat_with_model(request: Request):
@@ -34,28 +37,18 @@ async def chat_with_model(request: Request):
         if not user_message:
             raise HTTPException(status_code=400, detail="Message field is required.")
 
-        print(f"[User]: {user_message}")
-
         result = chat.invoke([HumanMessage(content=user_message)])
-
-        # Extract and return the response
         reply = getattr(result, 'content', str(result))
-        print(f"[TinyLLaMA]: {reply}")
 
         return {"response": reply}
 
     except Exception as e:
-        print(f"Error during chat: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
 @app.get("/test")
 def test_connection():
-    """
-    Test endpoint to check if Ollama is working properly
-    """
     try:
-        test_prompt = "Hello, can you hear me?"
-        result = chat.invoke([HumanMessage(content=test_prompt)])
+        result = chat.invoke([HumanMessage(content="Hello, can you hear me?")])
         return {
             "status": "success",
             "result_type": str(type(result)),
@@ -64,6 +57,3 @@ def test_connection():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Test connection failed: {str(e)}")
-
-if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
