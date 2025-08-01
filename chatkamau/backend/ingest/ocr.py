@@ -1,219 +1,107 @@
-import os
-import json
-from pdf2image import convert_from_path
-from PIL import Image, ImageDraw
+"""
+text_extractor.py
 
-import easyocr
+This module provides functionality to extract text from PDF files using two OCR strategies:
+1. EasyOCR
+2. Kreuzberg's `extract_file` async utility
+
+It chooses the result with the most text content and writes it to a specified output file.
+
+Dependencies:
+- easyocr
+- kreuzberg (https://pypi.org/project/kreuzberg/)
+- pdf2image
+- numpy
+- asyncio
+- nest_asyncio
+
+Usage Example:
+--------------
+from text_extractor import extract_best_text
+
+await extract_best_text("/path/to/input.pdf", "/path/to/output.txt")
+"""
+
+import asyncio
+from pathlib import Path
 import numpy as np
-import torch
-from transformers import LayoutLMv3Processor, LayoutLMv3ForTokenClassification
+from kreuzberg import extract_file  # async
+from easyocr import Reader
+from pdf2image import convert_from_path
+import nest_asyncio
 
-# """## Convert PDF to images"""
-
-# from pdf2image import convert_from_path
-# import os
-
-# # Convert PDF to images
-# images = convert_from_path("/content/Austin_Njuguna.pdf", dpi=300)
-# image_paths = []
-
-# for i, page in enumerate(images):
-#     image_path = f"page_{i+1}.png"
-#     page.save(image_path, "PNG")
-#     image_paths.append(image_path)
-
-# """## Use easy OCR"""
-
-# import easyocr
-# import matplotlib.pyplot as plt
-# from PIL import Image
-
-# reader = easyocr.Reader(['en'])  # You can add other languages
-
-# for image_path in image_paths:
-#     result = reader.readtext(image_path, detail=1)  # detail=1 gives bounding boxes
-
-#     # Visualize
-#     img = Image.open(image_path)
-#     plt.imshow(img)
-#     for detection in result:
-#         bbox, text, conf = detection
-#         print(f"[EASYOCR] Text: {text}, Confidence: {conf}")
-
-# """## Postprocess OCR Output"""
-
-# import json
-# import numpy as np # Import numpy to check for int32 type
-
-# output = []
-# for image_path in image_paths:
-#     result = reader.readtext(image_path, detail=1)
-#     for box, text, conf in result:
-#         # Convert numpy int32 to standard int for JSON serialization
-#         bbox_list = [[int(coord) for coord in point] for point in box]
-#         output.append({
-#             "image": image_path,
-#             "text": text,
-#             "confidence": float(conf), # Ensure confidence is a standard float
-#             "bbox": bbox_list
-#         })
-
-# with open("easyocr_output.json", "w") as f:
-#     json.dump(output, f, indent=2)
-
-# """## Model Pipeline"""
+nest_asyncio.apply()
 
 
+def easyocr_extract(pdf_path, languages=["en"]):
+    """
+    Extract text from a PDF using EasyOCR.
 
-# OCR Reader
-reader = easyocr.Reader(['en'])
+    Args:
+        pdf_path (str): Path to the PDF file.
+        languages (list[str]): List of languages (e.g., ['en']).
 
-# LayoutLMv3 processor + model
-processor = LayoutLMv3Processor.from_pretrained("microsoft/layoutlmv3-base", apply_ocr=False)
-model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base")
-
-def normalize_bbox(bbox, width, height):
-    return [
-        int(1000 * bbox[0] / width),
-        int(1000 * bbox[1] / height),
-        int(1000 * bbox[2] / width),
-        int(1000 * bbox[3] / height),
-    ]
-
-def process_pdf(pdf_path, output_dir="output"):
-    os.makedirs(output_dir, exist_ok=True)
-    images = convert_from_path(pdf_path, dpi=300)
-
-    summary = []
-
-    for idx, img in enumerate(images):
-        image_path = os.path.join(output_dir, f"page_{idx+1}.png")
-        img.save(image_path)
-        print(f"[INFO] Processing {image_path}...")
-
-        width, height = img.size
-        ocr_result = reader.readtext(image_path, detail=1)
-
-        # Preprocess OCR results for token classification
-        words = [str(text) for box, text, conf in ocr_result]
-        boxes = [normalize_bbox((box[0][0], box[0][1], box[2][0], box[2][1]), width, height)
-                 for box, _, _ in ocr_result]
-
-        encoding = processor(
-            images=[img],
-            text=[words],
-            boxes=[boxes],
-            return_tensors="pt",
-            truncation=True,
-            padding="max_length"
-        )
-
-        with torch.no_grad():
-            outputs = model(**encoding)
-
-        predictions = torch.argmax(outputs.logits, dim=2)
-        label_ids = predictions[0].tolist()
-
-        layout_results = []
-        for word, box, label_id in zip(words, boxes, label_ids):
-            layout_results.append({
-                "word": word,
-                "bbox": [int(c) for c in box],
-                "label": model.config.id2label[label_id]
-            })
-
-        # Draw annotations for table tokens
-        draw = ImageDraw.Draw(img)
-        for item in layout_results:
-            if "table" in item["label"].lower():
-                x0, y0, x1, y1 = [int(val * width / 1000) for val in item["bbox"]]
-                draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
-
-        # EasyOCR raw output, JSON-safe
-        easyocr_output = []
-        for box, text, conf in ocr_result:
-            bbox_list = [[int(coord) for coord in point] for point in box]
-            easyocr_output.append({
-                "bbox": bbox_list,
-                "text": str(text),
-                "confidence": float(conf)
-            })
-
-        # Grouping logic: glossary-like key-value pairing
-        glossary_pairs = []
-        used_indices = set()
-        for i, item in enumerate(layout_results):
-            if i in used_indices or len(item["word"].split()) > 4:
-                continue
-            curr_y = item["bbox"][1]
-            min_dist = float("inf")
-            best_match = None
-
-            for j in range(i + 1, len(layout_results)):
-                next_item = layout_results[j]
-                if j in used_indices:
-                    continue
-                next_y = next_item["bbox"][1]
-                dist = next_y - curr_y
-                if 10 < dist < 80 and len(next_item["word"].split()) > 4:
-                    if dist < min_dist:
-                        best_match = (j, next_item)
-                        min_dist = dist
-
-            if best_match:
-                glossary_pairs.append({
-                    "term": item["word"],
-                    "definition": best_match[1]["word"]
-                })
-                used_indices.update([i, best_match[0]])
-
-        # Table grouping based on y-coordinate clustering
-        def cluster_table_rows(tokens, y_thresh=20):
-            rows = []
-            sorted_tokens = sorted(tokens, key=lambda x: x["bbox"][1])
-            current_row = []
-
-            for token in sorted_tokens:
-                if not current_row:
-                    current_row.append(token)
-                    continue
-                y_diff = abs(token["bbox"][1] - current_row[-1]["bbox"][1])
-                if y_diff <= y_thresh:
-                    current_row.append(token)
-                else:
-                    rows.append(current_row)
-                    current_row = [token]
-            if current_row:
-                rows.append(current_row)
-            return rows
-
-        table_tokens = [t for t in layout_results if "table" in t["label"].lower()]
-        table_rows = cluster_table_rows(table_tokens)
-
-        page_output = {
-            "image": image_path,
-            "layoutlmv3_results": layout_results,
-            "raw_easyocr": easyocr_output,
-            "glossary_pairs": glossary_pairs,
-            "detected_table_rows": [
-                [{"text": cell["word"], "bbox": cell["bbox"]} for cell in row]
-                for row in table_rows
-            ]
-        }
-
-        # Save annotated image
-        img.save(os.path.join(output_dir, f"page_{idx+1}_annotated.png"))
-        summary.append(page_output)
-
-    # Save structured JSON
-    with open(os.path.join(output_dir, "layoutlmv3_summary.json"), "w") as f:
-        json.dump(summary, f, indent=2)
-
-    print(f"[DONE] Results saved to {output_dir}")
+    Returns:
+        str: Extracted text as a single string.
+    """
+    reader = Reader(languages, gpu=False)
+    pages = convert_from_path(pdf_path)
+    texts = []
+    for page in pages:
+        result = reader.readtext(np.array(page), detail=0)
+        texts.append("\n".join(result))
+    return "\n\n".join(texts)
 
 
-if __name__=='__main__':
-    # Example usage
-    # process_pdf('/content/Austin_Njuguna.pdf', output_dir='/content/output')
-    # Uncomment the above line and provide a valid PDF path to run the function
-    pass
+async def kreuzberg_extract(pdf_path):
+    """
+    Extract text from a PDF using Kreuzberg's async extractor.
+
+    Args:
+        pdf_path (str): Path to the PDF file.
+
+    Returns:
+        str: Extracted text as a single string.
+    """
+    result = await extract_file(pdf_path)
+    return result.content or ""
+
+
+async def extract_best_text(pdf_path: str, out_txt: str):
+    """
+    Run multiple OCR methods and save the result with the longest content.
+
+    Args:
+        pdf_path (str): Path to the input PDF file.
+        out_txt (str): Path to save the extracted text.
+
+    Returns:
+        None
+    """
+    out_path = Path(out_txt)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Run both extractors in parallel
+    kb_task = kreuzberg_extract(pdf_path)
+    loop = asyncio.get_event_loop()
+    ez_task = loop.run_in_executor(None, easyocr_extract, pdf_path)
+
+    kb, ez = await asyncio.gather(kb_task, ez_task)
+
+    candidates = [("kreuzberg", kb), ("easyocr", ez)]
+    label, content = max(candidates, key=lambda pair: len(pair[1] or ""))
+
+    print(f"Selected extractor: {label} (text length: {len(content)})")
+    out_path.write_text(content, encoding="utf-8")
+    print(f"Wrote extracted text to {out_txt}")
+
+
+# Example CLI usage or for testing:
+if __name__ == "__main__":
+    import sys
+
+    # Accept paths as command line arguments or fallback to example
+    pdf_path = sys.argv[1] if len(sys.argv) > 1 else "/content/AustinKimuhuNjugunaResume.pdf"
+    out_txt = sys.argv[2] if len(sys.argv) > 2 else "/content/output.txt"
+
+    asyncio.run(extract_best_text(pdf_path, out_txt))
