@@ -9,3 +9,8 @@ datasets
 
 # PDF Processing
 pdf2image
+
+# Note: poppler-utils is a system package and needs to be installed separately
+# On Ubuntu/Debian: sudo apt install -y poppler-utils
+# On macOS: brew install poppler
+# On Windows: Download poppler binaries and add to PATH
