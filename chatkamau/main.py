@@ -1,11 +1,13 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from typing import List
 from fastapi.templating import Jinja2Templates
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
+from chatkamau.scripts.ingest_docs import process_uploaded_files
 app = FastAPI()
 
 # Allow CORS from all origins
@@ -16,6 +18,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+import shutil
+import os
+import tempfile
 
 templates = Jinja2Templates(directory="templates")
 
@@ -57,3 +63,20 @@ def test_connection():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Test connection failed: {str(e)}")
+
+@app.post("/uploadfiles")
+async def create_upload_files(files: List[UploadFile] = File(...)):
+    uploaded_file_paths = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+ try:
+ for file in files:
+ file_path = os.path.join(tmpdir, file.filename)
+ with open(file_path, "wb") as buffer:
+ shutil.copyfileobj(file.file, buffer)
+ uploaded_file_paths.append(file_path)
+
+ await process_uploaded_files(uploaded_file_paths)
+ except Exception as e:
+ raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
+
+    return {"message": f"Successfully uploaded and processed {len(files)} files"}
