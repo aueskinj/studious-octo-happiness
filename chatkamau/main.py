@@ -7,7 +7,8 @@ from fastapi.templating import Jinja2Templates
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
-from chatkamau.scripts.ingest_docs import process_uploaded_files
+from backend.ingest.ingest_docs import process_uploaded_files
+
 app = FastAPI()
 
 # Allow CORS from all origins
@@ -68,15 +69,15 @@ def test_connection():
 async def create_upload_files(files: List[UploadFile] = File(...)):
     uploaded_file_paths = []
     with tempfile.TemporaryDirectory() as tmpdir:
- try:
- for file in files:
- file_path = os.path.join(tmpdir, file.filename)
- with open(file_path, "wb") as buffer:
- shutil.copyfileobj(file.file, buffer)
- uploaded_file_paths.append(file_path)
+        try:
+            for file in files:
+                file_path = os.path.join(tmpdir, file.filename)
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                    uploaded_file_paths.append(file_path)
 
- await process_uploaded_files(uploaded_file_paths)
- except Exception as e:
- raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
+            await process_uploaded_files(uploaded_file_paths)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"File processing failed: {str(e)}")
 
     return {"message": f"Successfully uploaded and processed {len(files)} files"}
