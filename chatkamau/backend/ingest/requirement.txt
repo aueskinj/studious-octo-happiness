@@ -9,3 +9,4 @@ datasets
 
 # PDF Processing
 pdf2image
+#do a sudo apt install poppler-utils for the pdf2image to work
